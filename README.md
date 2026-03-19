@@ -4,7 +4,7 @@
 
 A real-time quantitative trading system that combines AI sentiment analysis with automated paper trading across both crypto and stock markets. Runs entirely on consumer hardware with zero API costs.
 
-![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![React](https://img.shields.io/badge/React-19-green.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-orange.svg)
 ![ONNX](https://img.shields.io/badge/ONNX-Inference-yellow.svg)
