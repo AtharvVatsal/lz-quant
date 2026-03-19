@@ -4,10 +4,7 @@
     "builder": "NIXPACKS",
     "nixpacksPlan": {
       "aptPackages": ["curl"],
-      "pythonVersion": "3.11",
-      "installCmd": "pip install -r requirements.txt",
-      "buildCmd": "python download_model.py",
-      "startCmd": "python dual.py"
+      "pythonVersion": "3.11"
     }
   },
   "deploy": {
