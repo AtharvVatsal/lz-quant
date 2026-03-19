@@ -11,6 +11,7 @@ __pycache__/
 venv/
 .venv/
 env/
+lzq/
 .eggs/
 *.egg-info/
 *.egg
