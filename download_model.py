@@ -1,10 +1,9 @@
 """
 Startup script for Railway deployment.
-Downloads the ONNX model from HuggingFace before starting the app.
+Downloads the ONNX model from HuggingFace in background.
 """
 import os
-import urllib.request
-import zipfile
+import subprocess
 import sys
 
 MODEL_DIR = "./output/finbert-lora"
@@ -24,9 +23,10 @@ def download_model():
     
     if os.path.exists(model_path):
         print(f"Model already exists at {model_path}")
-        return
+        return True
     
     print("Downloading ONNX model from HuggingFace...")
+    
     for filename in MODEL_FILES:
         filepath = os.path.join(MODEL_DIR, filename)
         if os.path.exists(filepath):
@@ -35,15 +35,26 @@ def download_model():
         url = f"{HF_BASE}/{filename}"
         print(f"  Downloading {filename}...")
         try:
-            urllib.request.urlretrieve(url, filepath)
-            print(f"  OK {filename}")
+            result = subprocess.run(
+                ["curl", "-L", "-o", filepath, url],
+                capture_output=True,
+                text=True,
+                timeout=300
+            )
+            if result.returncode == 0:
+                print(f"  OK {filename}")
+            else:
+                print(f"  FAILED {filename}")
         except Exception as e:
             print(f"  FAILED {filename}: {e}")
             if filename == "sentiment_model.onnx":
-                print("WARNING: Model download failed. Running in simulated mode.")
-                return
+                return False
     
-    print("Model download complete!")
+    return True
 
 if __name__ == "__main__":
-    download_model()
+    success = download_model()
+    if not success:
+        print("WARNING: Model download failed. Running in simulated mode.")
+    print("Starting dual.py...")
+    os.system("python dual.py")
