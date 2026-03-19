@@ -3,12 +3,10 @@
   "build": {
     "builder": "NIXPACKS",
     "nixpacksPlan": {
-      "aptPackages": [],
-      "pythonPackage": {
-        "version": "3.11"
-      },
+      "aptPackages": ["curl"],
+      "pythonVersion": "3.11",
       "installCmd": "pip install -r requirements.txt",
-      "buildCmd": "",
+      "buildCmd": "python download_model.py",
       "startCmd": "python dual.py"
     }
   },
