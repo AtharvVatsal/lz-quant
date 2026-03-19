@@ -1,0 +1,49 @@
+# Environment
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.eggs/
+*.egg-info/
+*.egg
+dist/
+build/
+
+# ONNX Model (too large for git, download separately)
+output/
+
+# React
+lz-dashboard/node_modules/
+lz-dashboard/build/
+lz-dashboard/.env
+lz-dashboard/.gitignore
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data
+*.csv
+*.db
+*.sqlite
+
+# Train output
+trades_log.csv

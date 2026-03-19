@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LZ-Quant — Latency-Zero Quantitative Sentiment Engine</title>
+<meta name="description" content="Real-time AI sentiment engine for crypto and stock markets. Sub-15ms inference on consumer GPUs. Open source, zero cost.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #020609; --bg2: #060d17; --surface: #0a1420; --surface2: #0e1a2a;
+  --border: #12253a; --border-b: #1a3352;
+  --text: #8ba3c4; --dim: #3e5573; --bright: #e4edf8; --white: #f8fafc;
+  --bull: #00e676; --bear: #ff1744; --neut: #ffab00;
+  --accent: #2979ff; --accent2: #448aff; --accent-glow: #2979ff30;
+  --crypto: #f7931a; --stock: #4fc3f7;
+  --grad1: linear-gradient(135deg, #0a1420 0%, #020609 50%, #0a0e1a 100%);
+  --grad-accent: linear-gradient(135deg, #2979ff, #00e5ff);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--text); font-family: 'Outfit', sans-serif; overflow-x: hidden; }
+.mono { font-family: 'DM Mono', monospace; }
+
+/* ── GRAIN OVERLAY ─────────────────────────────────── */
+body::after {
+  content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 9999; opacity: 0.4;
+}
+
+/* ── SCROLLBAR ─────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-b); border-radius: 3px; }
+
+/* ── ANIMATIONS ────────────────────────────────────── */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes slideRight { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes glow { 0%, 100% { box-shadow: 0 0 20px var(--accent-glow); } 50% { box-shadow: 0 0 40px var(--accent-glow), 0 0 80px #2979ff15; } }
+@keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes sigFade { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+.reveal { opacity: 0; transform: translateY(30px); transition: opacity 0.8s ease, transform 0.8s ease; }
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* ── HERO ──────────────────────────────────────────── */
+.hero {
+  min-height: 100vh; display: flex; flex-direction: column; justify-content: center;
+  align-items: center; text-align: center; padding: 40px 24px;
+  position: relative; overflow: hidden;
+}
+.hero::before {
+  content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+  background: radial-gradient(ellipse at 50% 30%, #2979ff08 0%, transparent 50%),
+              radial-gradient(ellipse at 80% 70%, #00e67605 0%, transparent 40%);
+  animation: rotate 60s linear infinite;
+}
+@keyframes rotate { to { transform: rotate(360deg); } }
+
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--accent)12; border: 1px solid var(--accent)30;
+  border-radius: 100px; padding: 6px 18px; font-size: 12px; font-weight: 600;
+  color: var(--accent2); letter-spacing: 0.5px;
+  animation: fadeUp 0.8s ease both;
+  margin-bottom: 28px; position: relative;
+}
+.hero-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bull); animation: pulse 2s ease infinite; }
+
+.hero-title {
+  font-size: clamp(52px, 8vw, 96px); font-weight: 900; line-height: 0.95;
+  color: var(--white); letter-spacing: -3px; position: relative;
+  animation: fadeUp 0.8s ease 0.1s both;
+}
+.hero-title .accent { background: var(--grad-accent); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+.hero-sub {
+  font-size: clamp(16px, 2.5vw, 22px); color: var(--text); max-width: 680px;
+  margin: 24px auto 0; line-height: 1.6; font-weight: 300;
+  animation: fadeUp 0.8s ease 0.2s both;
+}
+
+.hero-stats {
+  display: flex; gap: 40px; margin-top: 48px; position: relative;
+  animation: fadeUp 0.8s ease 0.3s both;
+}
+.hero-stat { text-align: center; }
+.hero-stat-value { font-size: 32px; font-weight: 800; color: var(--white); font-family: 'DM Mono', monospace; }
+.hero-stat-value .unit { font-size: 14px; color: var(--accent2); }
+.hero-stat-label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 4px; }
+
+.hero-ctas {
+  display: flex; gap: 16px; margin-top: 48px;
+  animation: fadeUp 0.8s ease 0.4s both;
+}
+.btn {
+  padding: 14px 32px; border-radius: 8px; font-size: 14px; font-weight: 700;
+  text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
+  transition: all 0.3s ease; cursor: pointer; border: none; font-family: 'Outfit', sans-serif;
+}
+.btn-primary { background: var(--grad-accent); color: white; animation: glow 3s ease infinite; }
+.btn-primary:hover { transform: translateY(-2px); filter: brightness(1.15); }
+.btn-secondary { background: var(--surface2); color: var(--bright); border: 1px solid var(--border-b); }
+.btn-secondary:hover { background: var(--border); transform: translateY(-2px); }
+
+/* ── TICKER BAR ────────────────────────────────────── */
+.ticker-bar {
+  background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  padding: 10px 0; overflow: hidden; white-space: nowrap;
+}
+.ticker-inner { display: inline-flex; animation: ticker 30s linear infinite; }
+.ticker-item {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 0 24px; font-family: 'DM Mono', monospace; font-size: 13px;
+}
+.ticker-sym { color: var(--bright); font-weight: 500; }
+.ticker-price { color: var(--text); }
+.ticker-chg { font-weight: 500; }
+.ticker-chg.up { color: var(--bull); }
+.ticker-chg.dn { color: var(--bear); }
+
+/* ── SECTIONS ──────────────────────────────────────── */
+section { padding: 100px 24px; max-width: 1200px; margin: 0 auto; }
+.section-tag {
+  font-size: 11px; font-weight: 700; color: var(--accent2); text-transform: uppercase;
+  letter-spacing: 3px; font-family: 'DM Mono', monospace; margin-bottom: 12px;
+}
+.section-title {
+  font-size: clamp(32px, 5vw, 48px); font-weight: 800; color: var(--white);
+  letter-spacing: -1.5px; line-height: 1.1; margin-bottom: 20px;
+}
+.section-desc { font-size: 17px; color: var(--text); max-width: 600px; line-height: 1.7; font-weight: 300; }
+
+/* ── ARCHITECTURE ──────────────────────────────────── */
+.arch-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 48px; }
+.arch-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px 20px; position: relative; overflow: hidden; transition: all 0.4s ease;
+}
+.arch-card:hover { border-color: var(--accent)50; transform: translateY(-4px); box-shadow: 0 12px 40px #00000040; }
+.arch-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--grad-accent); opacity: 0; transition: opacity 0.3s;
+}
+.arch-card:hover::before { opacity: 1; }
+.arch-phase { font-size: 10px; font-family: 'DM Mono', monospace; color: var(--accent2); letter-spacing: 1px; margin-bottom: 8px; }
+.arch-name { font-size: 18px; font-weight: 700; color: var(--white); margin-bottom: 6px; }
+.arch-desc { font-size: 12px; color: var(--text); line-height: 1.6; }
+.arch-tech { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 4px; }
+.arch-tech span {
+  font-size: 9px; font-family: 'DM Mono', monospace; padding: 2px 8px;
+  background: var(--accent)12; color: var(--accent2); border-radius: 4px; border: 1px solid var(--accent)20;
+}
+.arch-arrow {
+  display: flex; align-items: center; justify-content: center; color: var(--dim);
+  font-size: 20px; align-self: center;
+}
+
+/* ── METRICS ───────────────────────────────────────── */
+.metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 48px; }
+.metric-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 28px 24px; text-align: center; transition: all 0.3s ease;
+}
+.metric-card:hover { border-color: var(--border-b); }
+.metric-value { font-size: 36px; font-weight: 800; font-family: 'DM Mono', monospace; color: var(--white); }
+.metric-value .highlight { color: var(--bull); }
+.metric-label { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 6px; }
+
+/* ── TECH STACK ────────────────────────────────────── */
+.stack-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 48px; }
+.stack-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px; transition: all 0.3s ease;
+}
+.stack-card:hover { border-color: var(--border-b); transform: translateY(-2px); }
+.stack-icon { font-size: 28px; margin-bottom: 12px; }
+.stack-name { font-size: 16px; font-weight: 700; color: var(--white); margin-bottom: 6px; }
+.stack-detail { font-size: 12px; color: var(--text); line-height: 1.6; }
+
+/* ── LIVE DEMO ─────────────────────────────────────── */
+.demo-container {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 16px;
+  overflow: hidden; margin-top: 48px; box-shadow: 0 20px 60px #00000050;
+}
+.demo-toolbar {
+  display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.demo-dot { width: 10px; height: 10px; border-radius: 50%; }
+.demo-dot.r { background: #ff5f57; } .demo-dot.y { background: #ffbd2e; } .demo-dot.g { background: #28c840; }
+.demo-url { margin-left: 12px; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--dim); background: var(--bg); padding: 4px 12px; border-radius: 4px; border: 1px solid var(--border); flex: 1; }
+.demo-body { padding: 12px; min-height: 500px; }
+
+/* Demo dashboard internals */
+.d-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.d-title { font-size: 13px; font-weight: 800; color: var(--bright); }
+.d-title span { color: var(--accent); }
+.d-live { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--bull); }
+.d-live .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--bull); animation: pulse 2s ease infinite; }
+.d-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-bottom: 8px; }
+.d-stat { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 5px; }
+.d-stat-l { font-size: 7px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--dim); }
+.d-stat-v { font-size: 12px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--bright); }
+.d-dual { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.d-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 8px; }
+.d-panel-h { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
+.d-panel-h.crypto { color: var(--crypto); }
+.d-panel-h.stock { color: var(--stock); }
+.d-prices { display: grid; gap: 3px; margin-bottom: 8px; }
+.d-pc { background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 3px 7px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; }
+.d-pc-sym { font-weight: 700; color: var(--bright); }
+.d-pc-p { font-family: 'DM Mono', monospace; color: var(--bright); font-weight: 600; }
+.d-pc-c { font-family: 'DM Mono', monospace; font-size: 9px; font-weight: 600; }
+.d-feed { display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow: hidden; }
+.d-sig { background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 4px 6px; font-size: 8px; border-left: 2px solid var(--dim); animation: sigFade 0.4s ease; }
+.d-sig.buy { border-left-color: var(--bull); } .d-sig.sell { border-left-color: var(--bear); } .d-sig.hold { border-left-color: var(--neut); }
+.d-sig-top { display: flex; justify-content: space-between; align-items: center; }
+.d-sig-act { font-weight: 800; font-family: 'DM Mono', monospace; }
+.d-sig-act.buy { color: var(--bull); } .d-sig-act.sell { color: var(--bear); } .d-sig-act.hold { color: var(--neut); }
+.d-sig-txt { color: var(--dim); font-size: 7px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d-bar { display: flex; height: 2px; border-radius: 1px; overflow: hidden; margin-top: 2px; }
+
+/* ── CTA SECTION ───────────────────────────────────── */
+.cta-section {
+  text-align: center; padding: 100px 24px;
+  background: radial-gradient(ellipse at 50% 50%, #2979ff08 0%, transparent 60%);
+}
+.cta-title { font-size: clamp(28px, 4vw, 42px); font-weight: 800; color: var(--white); letter-spacing: -1px; }
+.cta-sub { font-size: 16px; color: var(--text); margin: 16px auto 36px; max-width: 500px; font-weight: 300; }
+
+/* ── FOOTER ────────────────────────────────────────── */
+footer {
+  text-align: center; padding: 40px 24px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--dim);
+}
+footer a { color: var(--accent2); text-decoration: none; }
+
+/* ── RESPONSIVE ────────────────────────────────────── */
+@media (max-width: 900px) {
+  .arch-grid { grid-template-columns: 1fr; }
+  .arch-arrow { transform: rotate(90deg); }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .stack-grid { grid-template-columns: 1fr; }
+  .d-dual { grid-template-columns: 1fr; }
+  .hero-stats { flex-wrap: wrap; justify-content: center; gap: 24px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ HERO ═══════════════════ -->
+<section class="hero">
+  <div class="hero-badge"><div class="dot"></div> Open Source · Zero Cost · Built on a Laptop</div>
+  <h1 class="hero-title">
+    <span class="accent">LZ-Quant</span><br>Latency Zero
+  </h1>
+  <p class="hero-sub">
+    Real-time AI sentiment engine for crypto and stock markets.
+    Fine-tuned DistilBERT runs sub-15ms inference on a consumer GPU,
+    detects sentiment-price divergences, and paper trades autonomously.
+  </p>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="hero-stat-value">&lt;15<span class="unit">ms</span></div><div class="hero-stat-label">Tick-to-Trade</div></div>
+    <div class="hero-stat"><div class="hero-stat-value">81<span class="unit">%</span></div><div class="hero-stat-label">F1 Score</div></div>
+    <div class="hero-stat"><div class="hero-stat-value">16.7<span class="unit">K</span></div><div class="hero-stat-label">Training Samples</div></div>
+    <div class="hero-stat"><div class="hero-stat-value">$<span class="unit">0</span></div><div class="hero-stat-label">Total Cost</div></div>
+  </div>
+  <div class="hero-ctas">
+    <a href="https://github.com/YOUR_USERNAME/lz-quant" class="btn btn-primary" target="_blank">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+      View Source
+    </a>
+    <a href="https://lz-quant.vercel.app" class="btn btn-secondary" target="_blank">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+      Try Live Demo
+    </a>
+  </div>
+</section>
+
+<!-- ═══════════════════ TICKER ═══════════════════ -->
+<div class="ticker-bar">
+  <div class="ticker-inner" id="tickerInner"></div>
+</div>
+
+<!-- ═══════════════════ ARCHITECTURE ═══════════════════ -->
+<section class="reveal">
+  <div class="section-tag">Architecture</div>
+  <h2 class="section-title">Five phases. One pipeline.</h2>
+  <p class="section-desc">From raw WebSocket data to trading signal in under 15 milliseconds. Every phase runs on a single laptop.</p>
+  <div class="arch-grid">
+    <div class="arch-card">
+      <div class="arch-phase">PHASE 1</div>
+      <div class="arch-name">The Brain</div>
+      <div class="arch-desc">DistilBERT fine-tuned with LoRA on 16.7K financial sentences. FP16 mixed precision fits in 4GB VRAM.</div>
+      <div class="arch-tech"><span>PyTorch</span><span>PEFT/LoRA</span><span>ONNX</span></div>
+    </div>
+    <div class="arch-card">
+      <div class="arch-phase">PHASE 2</div>
+      <div class="arch-name">Nervous System</div>
+      <div class="arch-desc">Async WebSocket pipeline ingests Binance crypto + Alpaca stock data with zero blocking.</div>
+      <div class="arch-tech"><span>asyncio</span><span>WebSocket</span><span>Binance</span><span>Alpaca</span></div>
+    </div>
+    <div class="arch-card">
+      <div class="arch-phase">PHASE 3</div>
+      <div class="arch-name">The Spine</div>
+      <div class="arch-desc">ONNX Runtime runs inference at ~5ms/prediction on GPU or ~55ms on CPU. GIL-free threading.</div>
+      <div class="arch-tech"><span>ONNX Runtime</span><span>CUDA</span><span>NumPy</span></div>
+    </div>
+    <div class="arch-card">
+      <div class="arch-phase">PHASE 4</div>
+      <div class="arch-name">The Face</div>
+      <div class="arch-desc">FastAPI server pushes real-time signals to a browser dashboard via WebSocket broadcast.</div>
+      <div class="arch-tech"><span>FastAPI</span><span>React</span><span>WebSocket</span></div>
+    </div>
+    <div class="arch-card">
+      <div class="arch-phase">PHASE 5</div>
+      <div class="arch-name">The Edge</div>
+      <div class="arch-desc">Rolling Z-score divergence detection catches reversals. Paper trader manages risk autonomously.</div>
+      <div class="arch-tech"><span>Z-scores</span><span>Stop-loss</span><span>Trailing</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ METRICS ═══════════════════ -->
+<section class="reveal">
+  <div class="section-tag">Performance</div>
+  <h2 class="section-title">Built for speed.</h2>
+  <p class="section-desc">Measured on Intel i5-13th Gen, 32GB DDR5, RTX 3050 4GB — a regular laptop.</p>
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-value"><span class="highlight">4-10</span>ms</div>
+      <div class="metric-label">GPU Inference</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">0.56<span style="font-size:18px">GB</span></div>
+      <div class="metric-label">Peak VRAM</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">85<span style="font-size:18px">%</span></div>
+      <div class="metric-label">Accuracy</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value">0.44<span style="font-size:18px">%</span></div>
+      <div class="metric-label">Trainable Params</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ TECH STACK ═══════════════════ -->
+<section class="reveal">
+  <div class="section-tag">Stack</div>
+  <h2 class="section-title">All open source. All free.</h2>
+  <div class="stack-grid">
+    <div class="stack-card">
+      <div class="stack-icon">🧠</div>
+      <div class="stack-name">DistilBERT + LoRA</div>
+      <div class="stack-detail">66M parameter model, only 296K trained via Low-Rank Adaptation. Exports to ONNX for 2-3x faster inference.</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-icon">⚡</div>
+      <div class="stack-name">asyncio + WebSockets</div>
+      <div class="stack-detail">Non-blocking concurrent streams from Binance and Alpaca. Single thread handles all I/O while inference runs in parallel.</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-icon">📊</div>
+      <div class="stack-name">Divergence Detection</div>
+      <div class="stack-detail">Rolling Z-scores detect when sentiment and price disagree. These contrarian signals precede reversals.</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-icon">💹</div>
+      <div class="stack-name">Paper Trading Engine</div>
+      <div class="stack-detail">Full position management: stop-loss, take-profit, trailing stops, fixed fractional sizing, max drawdown circuit breaker.</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-icon">🌐</div>
+      <div class="stack-name">FastAPI + React</div>
+      <div class="stack-detail">Real-time dashboard with WebSocket broadcast. Dual-panel view for crypto and stocks simultaneously.</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-icon">📦</div>
+      <div class="stack-name">Zero Cost Infrastructure</div>
+      <div class="stack-detail">No paid APIs. No cloud bills. Binance public WebSocket + Alpaca free tier. Runs entirely on your laptop.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ LIVE DEMO ═══════════════════ -->
+<section id="demo" class="reveal">
+  <div class="section-tag">Live Demo</div>
+  <h2 class="section-title">See it in action.</h2>
+  <p class="section-desc">Simulated market data running through the actual dashboard interface. No backend required — this runs entirely in your browser.</p>
+  <div class="demo-container">
+    <div class="demo-toolbar">
+      <div class="demo-dot r"></div><div class="demo-dot y"></div><div class="demo-dot g"></div>
+      <div class="demo-url">localhost:8765</div>
+    </div>
+    <div class="demo-body">
+      <div class="d-hdr">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="d-title"><span>⚡</span> LZ-QUANT <span style="color:var(--dim);font-size:9px;font-weight:400">DUAL MARKET</span></div>
+          <div class="d-live"><div class="dot"></div> LIVE DEMO</div>
+        </div>
+        <div class="mono" style="font-size:9px;color:var(--dim)" id="demoClock"></div>
+      </div>
+      <div class="d-stats">
+        <div class="d-stat"><div class="d-stat-l">Signals</div><div class="d-stat-v" id="dSig">0</div></div>
+        <div class="d-stat"><div class="d-stat-l">Latency</div><div class="d-stat-v" id="dLat">—</div></div>
+        <div class="d-stat"><div class="d-stat-l">Equity</div><div class="d-stat-v" id="dEq">$10,000</div></div>
+        <div class="d-stat"><div class="d-stat-l">P&L</div><div class="d-stat-v" id="dPnl" style="color:var(--bull)">+$0</div></div>
+        <div class="d-stat"><div class="d-stat-l">Win Rate</div><div class="d-stat-v" id="dWR">—</div></div>
+        <div class="d-stat"><div class="d-stat-l">Trades</div><div class="d-stat-v" id="dTr">0</div></div>
+      </div>
+      <div class="d-dual">
+        <div class="d-panel">
+          <div class="d-panel-h crypto">₿ CRYPTO — BINANCE</div>
+          <div class="d-prices" id="dCP"></div>
+          <div class="d-feed" id="dCF"></div>
+        </div>
+        <div class="d-panel">
+          <div class="d-panel-h stock">📈 STOCKS — NASDAQ</div>
+          <div class="d-prices" id="dSP"></div>
+          <div class="d-feed" id="dSF"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ CTA ═══════════════════ -->
+<div class="cta-section">
+  <h2 class="cta-title">Run it yourself in 3 commands.</h2>
+  <p class="cta-sub">Clone, train, launch. Everything runs on your machine.</p>
+  <div style="max-width:500px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;text-align:left;font-family:'DM Mono',monospace;font-size:13px;color:var(--text);line-height:2">
+    <span style="color:var(--dim)">$</span> <span style="color:var(--bright)">git clone</span> <span style="color:var(--accent2)">github.com/YOUR_USERNAME/lz-quant</span><br>
+    <span style="color:var(--dim)">$</span> <span style="color:var(--bright)">pip install</span> <span style="color:var(--accent2)">-r requirements.txt</span><br>
+    <span style="color:var(--dim)">$</span> <span style="color:var(--bright)">python</span> <span style="color:var(--accent2)">dual.py</span><br>
+    <span style="color:var(--bull)">→</span> <span style="color:var(--dim)">open</span> <span style="color:var(--accent2)">localhost:8765</span>
+  </div>
+  <div style="margin-top:36px;display:flex;gap:16px;justify-content:center">
+    <a href="https://github.com/YOUR_USERNAME/lz-quant" class="btn btn-primary" target="_blank">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+      View on GitHub
+    </a>
+    <a href="https://lz-quant.vercel.app" class="btn btn-secondary" target="_blank">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+      Try Live
+    </a>
+  </div>
+</div>
+
+<footer>
+  <div style="margin-bottom:12px">
+    <a href="https://github.com/YOUR_USERNAME/lz-quant" target="_blank" style="margin-right:16px">GitHub</a>
+    <a href="https://lz-quant.vercel.app" target="_blank" style="margin-right:16px">Live Demo</a>
+  </div>
+  Built with ⚡ by <a href="#">YOUR_NAME</a> · MIT License · 2025
+</footer>
+
+<!-- ═══════════════════ SCRIPTS ═══════════════════ -->
+<script>
+// ── Scroll Reveal ──────────────────────────────────
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// ── Ticker Bar ─────────────────────────────────────
+const tickerData = [
+  { sym: 'BTC', price: 71989, chg: 1.24 }, { sym: 'ETH', price: 2136, chg: -0.83 },
+  { sym: 'SOL', price: 89.7, chg: 2.15 }, { sym: 'AAPL', price: 178.32, chg: 0.45 },
+  { sym: 'MSFT', price: 421.56, chg: -0.12 }, { sym: 'NVDA', price: 876.90, chg: 3.21 },
+  { sym: 'TSLA', price: 245.80, chg: -1.67 }, { sym: 'GOOGL', price: 175.44, chg: 0.89 },
+  { sym: 'SPY', price: 524.12, chg: 0.33 }, { sym: 'QQQ', price: 456.78, chg: 0.56 },
+  { sym: 'AMD', price: 162.30, chg: 1.45 }, { sym: 'META', price: 505.20, chg: -0.34 },
+  { sym: 'AMZN', price: 186.75, chg: 0.78 },
+];
+const tickerHTML = tickerData.map(t =>
+  `<div class="ticker-item"><span class="ticker-sym">${t.sym}</span><span class="ticker-price">$${t.price.toLocaleString()}</span><span class="ticker-chg ${t.chg>=0?'up':'dn'}">${t.chg>=0?'▲':'▼'} ${Math.abs(t.chg).toFixed(2)}%</span></div>`
+).join('');
+document.getElementById('tickerInner').innerHTML = tickerHTML + tickerHTML;
+
+// ── Demo Dashboard ─────────────────────────────────
+const cryptoSyms = [{s:'BTCUSDT',p:71989,c:'#f7931a'},{s:'ETHUSDT',p:2136,c:'#627eea'},{s:'SOLUSDT',p:89.7,c:'#00ffa3'}];
+const stockSyms = [{s:'AAPL',p:178,c:'#555'},{s:'MSFT',p:421,c:'#00a4ef'},{s:'NVDA',p:876,c:'#76b900'},{s:'TSLA',p:245,c:'#c00'},{s:'GOOGL',p:175,c:'#4285f4'},{s:'SPY',p:524,c:'#b8860b'}];
+const vol = {BTCUSDT:80,ETHUSDT:8,SOLUSDT:1.2,AAPL:0.8,MSFT:1.5,NVDA:4,TSLA:3,GOOGL:0.7,SPY:0.5};
+let sigN=0, equity=10000, trades=0, wins=0;
+
+function initDemoPrices(syms, containerId) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = syms.map(s =>
+    `<div class="d-pc"><div style="display:flex;align-items:center;gap:4px"><div style="width:5px;height:5px;border-radius:50%;background:${s.c}"></div><span class="d-pc-sym">${s.s.replace('USDT','')}</span></div><div style="display:flex;align-items:center;gap:6px"><span class="d-pc-c" id="dc_${s.s}"></span><span class="d-pc-p" id="dp_${s.s}">$${s.p.toLocaleString()}</span></div></div>`
+  ).join('');
+}
+initDemoPrices(cryptoSyms, 'dCP');
+initDemoPrices(stockSyms, 'dSP');
+
+setInterval(() => {
+  document.getElementById('demoClock').textContent = new Date().toLocaleTimeString('en-US',{hour12:false});
+}, 1000);
+
+function demoTick() {
+  const allSyms = [...cryptoSyms, ...stockSyms];
+  const s = allSyms[Math.floor(Math.random() * allSyms.length)];
+  const v = vol[s.s] || 1;
+  s.p += (Math.random() - 0.48) * v;
+  s.p = Math.max(s.p, 1);
+  const isCrypto = cryptoSyms.includes(s);
+
+  const el = document.getElementById('dp_' + s.s);
+  if (el) el.textContent = '$' + s.p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  sigN++;
+  const sentiments = ['BULLISH','BEARISH','NEUTRAL'];
+  const sent = sentiments[Math.floor(Math.random()*3)];
+  const actions = {BULLISH:'BUY',BEARISH:'SELL',NEUTRAL:'HOLD'};
+  const action = Math.random() > 0.3 ? actions[sent] : 'HOLD';
+  const conf = (50 + Math.random() * 50).toFixed(0);
+  const lat = (2 + Math.random() * 60).toFixed(1);
+  const cls = action.toLowerCase();
+  const ico = {BUY:'▲',SELL:'▼',HOLD:'●'}[action];
+  const acCol = {BUY:'var(--bull)',SELL:'var(--bear)',HOLD:'var(--neut)'}[action];
+
+  if (action !== 'HOLD' && Math.random() > 0.8) {
+    trades++;
+    const pnl = (Math.random()-0.45) * 50;
+    equity += pnl;
+    if (pnl > 0) wins++;
+  }
+
+  const texts = [
+    `${s.s} trading flat at $${s.p.toFixed(2)}, up 0.01% on buy-side trade`,
+    `${s.s} edging higher at $${s.p.toFixed(2)}, up 0.05%`,
+    `${s.s} ${isCrypto?'':'stock '}falling at $${s.p.toFixed(2)}, down 0.03%`,
+    `${s.s} order book balanced, ratio 1.05`,
+  ];
+  const text = texts[Math.floor(Math.random()*texts.length)];
+
+  const card = document.createElement('div');
+  card.className = 'd-sig ' + cls;
+  card.innerHTML = `<div class="d-sig-top"><div style="display:flex;align-items:center;gap:3px"><span class="d-sig-act ${cls}">${ico} ${action}</span><span style="color:${s.c};font-weight:700;font-size:8px">${s.s.replace('USDT','')}</span><span style="background:${acCol}22;color:${acCol};padding:0 4px;border-radius:2px;font-size:7px;font-weight:700;font-family:'DM Mono',monospace">${conf}%</span></div><span style="color:var(--dim);font-size:6px;font-family:'DM Mono',monospace">${lat}ms</span></div><div class="d-sig-txt">${text}</div><div class="d-bar"><div style="width:${sent==='BULLISH'?65:20}%;background:var(--bull)"></div><div style="width:${sent==='NEUTRAL'?55:15}%;background:var(--neut)"></div><div style="width:${sent==='BEARISH'?60:20}%;background:var(--bear)"></div></div>`;
+
+  const feed = document.getElementById(isCrypto ? 'dCF' : 'dSF');
+  feed.insertBefore(card, feed.firstChild);
+  while (feed.children.length > 8) feed.removeChild(feed.lastChild);
+
+  document.getElementById('dSig').textContent = sigN;
+  document.getElementById('dLat').textContent = lat + 'ms';
+  document.getElementById('dEq').textContent = '$' + equity.toLocaleString('en-US',{maximumFractionDigits:0});
+  const pnl = equity - 10000;
+  document.getElementById('dPnl').textContent = (pnl>=0?'+$':'−$') + Math.abs(pnl).toFixed(0);
+  document.getElementById('dPnl').style.color = pnl >= 0 ? 'var(--bull)' : 'var(--bear)';
+  document.getElementById('dTr').textContent = trades;
+  document.getElementById('dWR').textContent = trades > 0 ? ((wins/trades)*100).toFixed(0)+'%' : '—';
+}
+
+setInterval(demoTick, 700);
+</script>
+</body>
+</html>
