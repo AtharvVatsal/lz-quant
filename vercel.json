@@ -1,6 +1,3 @@
 {
-  "buildCommand": "cd lz-dashboard && npm install && npm run build",
-  "outputDirectory": "lz-dashboard/build",
-  "installCommand": "cd lz-dashboard && npm install",
-  "framework": null
+  "outputDirectory": "lz-dashboard/build"
 }
