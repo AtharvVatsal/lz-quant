@@ -1,4 +1,14 @@
-# LZ-Quant Dependencies - CPU Only (for Railway free tier)
+# LZ-Quant Dependencies - Railway Deployment (CPU Only)
+
+# PyTorch CPU-only (smaller, ~200MB vs 2GB+ with CUDA)
+# Using CPU-only index URL to avoid large GPU packages
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+numpy>=1.26.0
+
+# ONNX INFERENCE (CPU)
+onnxruntime>=1.16.0
+transformers>=4.40.0
 
 # DATA PIPELINE & INGESTION
 websockets>=12.0
@@ -8,6 +18,3 @@ python-dotenv>=1.0.0
 # DASHBOARD SERVER
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
-
-# NUMPY
-numpy>=1.26.0
