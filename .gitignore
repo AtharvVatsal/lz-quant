@@ -48,3 +48,6 @@ Thumbs.db
 
 # Train output
 trades_log.csv
+
+#Self Docs
+PROJECT_GUIDE.md

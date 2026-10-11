@@ -493,6 +493,13 @@ async def text_sentiment_consumer(router, engine, detector, trader, manager, sta
         })
 
 
+async def start_ingestion_when_priced(router, state, timeout=30):
+    t0 = time.time()
+    while not state["prices"] and time.time() - t0 < timeout:
+        await asyncio.sleep(0.5)
+    await router.start()
+
+
 # PERIODIC PRICE CHECK (stop-loss/take-profit)
 async def periodic_price_check(trader, manager, state):
     """Check stop-loss and take-profit every 2 seconds using latest prices."""
@@ -965,14 +972,16 @@ async def startup():
     trader = PaperTradingEngine(TRADE_CFG)
     csv_logger = TradeCSVLogger()
 
-    # Real text ingestion (Reddit + RSS)
     router = TextRouter()
     state["router"] = router
-    await router.start()
 
     # Price tracking + inference pipelines
     asyncio.create_task(binance_pipeline(trader, mgr, state, engine, detector))
     asyncio.create_task(alpaca_pipeline(trader, mgr, state, engine, detector))
+
+    # Real text ingestion (Reddit + RSS). Started once a price exists: text for a
+    # symbol with no price is skipped and then deduped, so the first batch would be lost.
+    asyncio.create_task(start_ingestion_when_priced(router, state))
 
     # Sentiment consumer: reads real text → inference → trading signals
     asyncio.create_task(text_sentiment_consumer(router, engine, detector, trader, mgr, state, csv_logger))

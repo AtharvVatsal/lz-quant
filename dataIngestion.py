@@ -22,26 +22,30 @@ Test standalone:
 
 import asyncio
 import hashlib
-import json
+import html
 import re
 import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 
 # CONFIG
 
+# (subreddit, market). The third field is unused: all subreddits share one feed
+# polled every REDDIT_POLL_INTERVAL seconds to stay under Reddit's rate limit.
 REDDIT_SOURCES = [
-    ("CryptoCurrency", "crypto", 15), ("Bitcoin", "crypto", 15),
-    ("ethereum", "crypto", 15), ("solana", "crypto", 15),
-    ("CryptoMarkets", "crypto", 15),
-    ("wallstreetbets", "stocks", 15), ("stocks", "stocks", 15),
-    ("investing", "stocks", 15), ("options", "stocks", 15),
-    ("StockMarket", "stocks", 15),
+    ("CryptoCurrency", "crypto", 60), ("Bitcoin", "crypto", 60),
+    ("ethereum", "crypto", 60), ("solana", "crypto", 60),
+    ("CryptoMarkets", "crypto", 60),
+    ("wallstreetbets", "stocks", 60), ("stocks", "stocks", 60),
+    ("investing", "stocks", 60), ("options", "stocks", 60),
+    ("StockMarket", "stocks", 60),
 ]
+REDDIT_POLL_INTERVAL = 60
 
 RSS_SOURCES = [
     ("https://www.coindesk.com/arc/outboundfeeds/rss/", "crypto", 45),
@@ -71,6 +75,8 @@ STOCK_KW = [r"\bstock\b", r"\bearnings\b", r"\bFed\b", r"\brate\b",
             r"\bmarket\b", r"\bDow\b", r"\brally\b", r"\bcrash\b"]
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LZ-Quant/1.0"
+# Reddit asks for a descriptive "<platform>:<app>:<version>" User-Agent
+REDDIT_UA = "python:lz-quant:v1.0 (paper-trading research)"
 
 
 # DATA TYPES
@@ -114,6 +120,12 @@ class SymbolDetector:
 
 
 # REDDIT STREAM
+# Reddit blocks the logged-out .json endpoints (HTTP 403) and allows only a few
+# logged-out requests per minute (HTTP 429). Its Atom (.rss) feeds still work, so
+# all subreddits are fetched as ONE combined feed (r/a+b+c/new/.rss) per poll.
+
+ATOM = "{http://www.w3.org/2005/Atom}"
+
 
 class RedditStream:
     def __init__(self):
@@ -121,56 +133,82 @@ class RedditStream:
         self._det = SymbolDetector()
 
     def _fetch(self, url):
+        """Returns (xml_text, retry_after_seconds). retry_after is set on HTTP 429."""
         try:
-            req = Request(url, headers={"User-Agent": UA})
-            with urlopen(req, timeout=10) as r:
-                return json.loads(r.read().decode("utf-8"))
-        except: return {}
+            req = Request(url, headers={"User-Agent": REDDIT_UA})
+            with urlopen(req, timeout=15) as r:
+                return r.read().decode("utf-8", errors="replace"), 0
+        except HTTPError as e:
+            if e.code == 429:
+                reset = e.headers.get("x-ratelimit-reset") or e.headers.get("Retry-After") or 60
+                try: return "", max(float(reset), 30)
+                except ValueError: return "", 60
+            print(f"[REDDIT] HTTP {e.code}")
+            return "", 0
+        except Exception as e:
+            print(f"[REDDIT] Fetch failed: {e}")
+            return "", 0
 
     def _clean(self, text):
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = html.unescape(text)
+        text = re.sub(r"submitted by\s+/u/\S+.*$", "", text, flags=re.DOTALL)
+        text = re.sub(r"This post contains content not supported on old Reddit\.[^.]*\.?", "", text)
         text = re.sub(r"http\S+", "", text)
-        text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
         text = re.sub(r"[#*_~`>]", "", text)
         text = re.sub(r"\s+", " ", text).strip()
         return text[:500]
 
-    async def poll(self, sub, market_hint, queue, interval=30):
-        urls = [
-            f"https://www.reddit.com/r/{sub}/new.json?limit=15",
-            f"https://www.reddit.com/r/{sub}/hot.json?limit=10",
-        ]
+    def _parse(self, xml):
+        try: root = ET.fromstring(xml)
+        except ET.ParseError: return []
+        posts = []
+        for e in root.iter(f"{ATOM}entry"):
+            cat = e.find(f"{ATOM}category")
+            link = e.find(f"{ATOM}link")
+            posts.append({
+                "id": e.findtext(f"{ATOM}id", ""),
+                "sub": cat.get("term", "") if cat is not None else "",
+                "title": html.unescape(e.findtext(f"{ATOM}title", "")),
+                "body": e.findtext(f"{ATOM}content", ""),
+                "url": link.get("href", "") if link is not None else "",
+            })
+        return posts
+
+    async def poll(self, sources, queue, interval=60):
+        markets = {sub.lower(): mkt for sub, mkt, _ in sources}
+        names = {sub.lower(): sub for sub, _, _ in sources}
+        url = f"https://www.reddit.com/r/{'+'.join(sub for sub, _, _ in sources)}/new/.rss?limit=100"
         loop = asyncio.get_running_loop()
-        print(f"[REDDIT] r/{sub} every {interval}s")
+        print(f"[REDDIT] {len(sources)} subreddits as one RSS feed every {interval}s")
 
         while True:
-            for url in urls:
-                try:
-                    data = await loop.run_in_executor(None, self._fetch, url)
-                    for post in data.get("data", {}).get("children", []):
-                        p = post.get("data", {})
-                        pid = p.get("id", "")
-                        if pid in self._seen: continue
-                        self._seen.append(pid)
+            xml, retry_after = await loop.run_in_executor(None, self._fetch, url)
+            if retry_after:
+                print(f"[REDDIT] Rate limited — retrying in {retry_after:.0f}s")
+                await asyncio.sleep(retry_after)
+                continue
 
-                        title = p.get("title", "")
-                        body = p.get("selftext", "")[:300]
-                        text = self._clean(f"{title}. {body}" if body else title)
-                        if len(text) < 15: continue
+            for p in self._parse(xml):
+                if not p["id"] or p["id"] in self._seen: continue
+                self._seen.append(p["id"])
 
-                        matches = self._det.detect(text, market_hint)
-                        if not matches:
-                            matches = [("BTCUSDT" if market_hint == "crypto" else "SPY", market_hint)]
+                body = self._clean(p["body"])[:300]
+                text = self._clean(f"{p['title']}. {body}" if body else p["title"])
+                if len(text) < 15: continue
 
-                        score = p.get("ups", 0) - p.get("downs", 0)
-                        for sym, mkt in matches:
-                            await queue.put(TextItem(
-                                text=text, symbol=sym, market=mkt,
-                                source=f"reddit:{sub}", source_type="reddit",
-                                timestamp=p.get("created_utc", time.time()),
-                                url=f"https://reddit.com{p.get('permalink','')}",
-                                score=score,
-                            ))
-                except: pass
+                sub = names.get(p["sub"].lower(), p["sub"])
+                market_hint = markets.get(p["sub"].lower(), "crypto")
+                matches = self._det.detect(text, market_hint)
+                if not matches:
+                    matches = [("BTCUSDT" if market_hint == "crypto" else "SPY", market_hint)]
+
+                for sym, mkt in matches:
+                    await queue.put(TextItem(
+                        text=text, symbol=sym, market=mkt,
+                        source=f"reddit:{sub}", source_type="reddit",
+                        timestamp=time.time(), url=p["url"],
+                    ))
             await asyncio.sleep(interval)
 
 
@@ -262,9 +300,7 @@ class TextRouter:
         self._stats = {"reddit": 0, "rss": 0, "total": 0, "start": time.time()}
 
     async def start(self):
-        tasks = []
-        for sub, mkt, interval in REDDIT_SOURCES:
-            tasks.append(asyncio.create_task(self._reddit.poll(sub, mkt, self.queue, interval)))
+        tasks = [asyncio.create_task(self._reddit.poll(REDDIT_SOURCES, self.queue, REDDIT_POLL_INTERVAL))]
         for url, mkt, interval in RSS_SOURCES:
             tasks.append(asyncio.create_task(self._rss.poll(url, mkt, self.queue, interval)))
         tasks.append(asyncio.create_task(self._report()))
